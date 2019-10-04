@@ -70,10 +70,51 @@ def parse_arguments():
     return arguments
 
 def add_header(sam_file):
+    # TODO
     pass
 
+def calculate_flag(alignment):
+    """
+    From SAM Format Specification, version from 20.06.2019
+    https://samtools.github.io/hts-specs/SAMv1.pdf:
+    1    0x1   template having multiple segments in sequencing
+    2    0x2   each segment properly aligned according to the aligner
+    4    0x4   segment unmapped
+    8    0x8   next segment in the template unmapped
+    16   0x10  SEQ being reverse complemented
+    32   0x20  SEQ of the next segment in the template being reverse complemented
+    64   0x40  the first segment in the template
+    128  0x80  the last segment in the template
+    256  0x100 secondary alignment
+    512  0x200 not passing filters, such as platform/vendor quality controls
+    1024 0x400 PCR or optical duplicate
+    2048 0x800 supplementary alignment
+    """
+    flag = 0
+    if alignment.strand = -1:
+        flag += 16
+    if not alignment.is_primary:
+        flag += 256
+    return str(flag)
+
 def alignment2sam(alignment, read_name, sequence):
-    flag = '0'
+    """
+    From SAM Format Specification, version from 20.06.2019
+    https://samtools.github.io/hts-specs/SAMv1.pdf:
+    1  QNAME String [!-?A-~]{1,254}             Query template NAME
+    2  FLAG  Int    [0, 2^16−1]                 bitwise FLAG
+    3  RNAME String \*|[:rname:∧*=][:rname:]*   Reference sequence NAME
+    4  POS   Int    [0,231−1]                   1-based leftmost mapping POSition
+    5  MAPQ  Int    [0,28−1]                    MAPping Quality
+    6  CIGAR String \*|([0-9]+[MIDNSHPX=])+     CIGAR string
+    7  RNEXT String \*|=|[:rname:∧*=][:rname:]* Reference name of the mate/next read
+    8  PNEXT Int    [0,231−1]                   Position of the mate/next read
+    9  TLEN  Int    [−231+ 1,231−1]             observed Template LENgth
+    10 SEQ   String \*|[A-Za-z=.]+              segment SEQuence
+    11 QUAL  String [!-~]+                      ASCII of Phred-scaled base QUALity+33
+    """
+    # TODO: fields 7, 8, 9, potentially 11
+    flag = calculate_flag(alignment)
     return '\t'.join([read_name, flag,
                       alignment.ctg, str(alignment.r_st),
                       str(alignment.mapq), alignment.cigar_str,
@@ -92,41 +133,50 @@ def map_contigs(filename):
         contig_mappings[contig_name] = reference_for_contigs.map(contig_seq)
 
 def choose_mapping(mappings):
-    # it will be chosen based on FLAGS
+    # TODO: it will be chosen based on FLAGS
     return mappings[0]
 
 def find_contig_mappings(mappings2contigs):
     return [contig_mappings[mapping.ctg] for mapping in mappings2contigs]
 
-def transfer_mapping(read2contig, contig2ref):
-    print("Read2contig:")
-    print(read2contig)
-    print("Contig2ref:")
-    print(contig2ref)
-    #position_on_ref = contig2ref.r_st
-    position_on_contig = contig2ref.q_st
-    offset = - contig2ref.q_st
-    for count, operation in contig2ref.cigar:
+def calculate_offset(cigar, start, stop):
+    position_on_contig = start
+    offset = - start
+    for count, operation in cigar:
         print("Count, operation:")
         print(count, operation)
-        end_operation = position_on_contig
+        end_of_operation = position_on_contig
         if operation in OPERATIONS_QUERY_CONSUMING:
-            end_operation += count
-        print("end operation:")
-        print(end_operation)
-        if end_operation >= read2contig.r_st:
+            end_of_operation += count
+        print("end of operation:")
+        print(end_of_operation)
+        if end_of_operation >= stop:
             print("koniec")
             break
         if operation in OPERATIONS_REFERENCE_CONSUMING:
-            #position_on_ref += count
             offset += count
         if operation in OPERATIONS_QUERY_CONSUMING:
             position_on_contig += count
             offset -= count
-    print(position_on_contig, offset, read2contig.r_st)
-    #start = - position_on_contig + position_on_ref + read2contig.r_st
-    start = read2contig.r_st + contig2ref.r_st + offset
-    end = start + read2contig.r_en - read2contig.r_st
+    print(position_on_contig, offset, stop)
+    return offset
+ 
+def transfer_mapping(read2contig, contig2ref):
+    # TODO:
+    # !reverse mapping
+    # cigar? Do we keep the original one? Or merge with contig2ref?
+    # Mapping quality - how do we want to calculate it?
+    # mlen, blen attributes
+    print("Read2contig:")
+    print(read2contig)
+    print("Contig2ref:")
+    print(contig2ref)
+    start_offset = calculate_offset(contig2ref.cigar, contig2ref.q_st, read2contig.r_st)
+    start = read2contig.r_st + contig2ref.r_st + start_offset
+    end_offset = calculate_offset(contig2ref.cigar, contig2ref.q_st, read2contig.r_en)
+    #end = start + read2contig.r_en - read2contig.r_st
+    end = read2contig.r_en + contig2ref.r_st + end_offset
+    # ^ na pewno mozna zrobic lepiej mapowanie koncowego koordynatu
     print("start, end:")
     print(start, end)
     read2ref = mappy.Alignment(contig2ref.ctg, contig2ref.ctg_len, # chromosome
@@ -147,6 +197,7 @@ def transfer_mapping(read2contig, contig2ref):
     return read2ref
 
 def get_transferred_mapping(read2contig, contig2ref):
+    # TODO: proper mapping choosing
     if contig2ref == []:
         return None
     read2contig = read2contig[0]
@@ -203,6 +254,7 @@ def main():
             else:
                 # read mapped 2 reference and 2 contigs
                 # we want to transfer mapping
+                # TODO: it should be in a method
                 mappings = find_contig_mappings(mappings2contigs)
                 mapping = get_transferred_mapping(mappings2contigs, mappings)
                 if mapping is None:
