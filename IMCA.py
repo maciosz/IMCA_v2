@@ -75,8 +75,10 @@ def add_header(sam_file):
 
 def calculate_flag(alignment):
     """
-    From SAM Format Specification, version from 20.06.2019
-    https://samtools.github.io/hts-specs/SAMv1.pdf:
+    From SAM Format Specification
+    https://samtools.github.io/hts-specs/SAMv1.pdf
+    version from 20.06.2019:
+    =============================================================================
     1    0x1   template having multiple segments in sequencing
     2    0x2   each segment properly aligned according to the aligner
     4    0x4   segment unmapped
@@ -89,9 +91,10 @@ def calculate_flag(alignment):
     512  0x200 not passing filters, such as platform/vendor quality controls
     1024 0x400 PCR or optical duplicate
     2048 0x800 supplementary alignment
+    =============================================================================
     """
     flag = 0
-    if alignment.strand = -1:
+    if alignment.strand == -1:
         flag += 16
     if not alignment.is_primary:
         flag += 256
@@ -99,19 +102,24 @@ def calculate_flag(alignment):
 
 def alignment2sam(alignment, read_name, sequence):
     """
-    From SAM Format Specification, version from 20.06.2019
-    https://samtools.github.io/hts-specs/SAMv1.pdf:
+    Return alignment as a line from SAM file.
+
+    From SAM Format Specification
+    https://samtools.github.io/hts-specs/SAMv1.pdf
+    version from 20.06.2019:
+    =================================================================================
     1  QNAME String [!-?A-~]{1,254}             Query template NAME
     2  FLAG  Int    [0, 2^16−1]                 bitwise FLAG
     3  RNAME String \*|[:rname:∧*=][:rname:]*   Reference sequence NAME
-    4  POS   Int    [0,231−1]                   1-based leftmost mapping POSition
-    5  MAPQ  Int    [0,28−1]                    MAPping Quality
+    4  POS   Int    [0,2^31−1]                  1-based leftmost mapping POSition
+    5  MAPQ  Int    [0,2^8−1]                   MAPping Quality
     6  CIGAR String \*|([0-9]+[MIDNSHPX=])+     CIGAR string
     7  RNEXT String \*|=|[:rname:∧*=][:rname:]* Reference name of the mate/next read
-    8  PNEXT Int    [0,231−1]                   Position of the mate/next read
-    9  TLEN  Int    [−231+ 1,231−1]             observed Template LENgth
+    8  PNEXT Int    [0,2^31−1]                  Position of the mate/next read
+    9  TLEN  Int    [−2^31+1, 2^31−1]           observed Template LENgth
     10 SEQ   String \*|[A-Za-z=.]+              segment SEQuence
     11 QUAL  String [!-~]+                      ASCII of Phred-scaled base QUALity+33
+    =================================================================================
     """
     # TODO: fields 7, 8, 9, potentially 11
     flag = calculate_flag(alignment)
@@ -121,6 +129,9 @@ def alignment2sam(alignment, read_name, sequence):
                       '*', '0', '0', sequence, '*'])
 
 def write_alignment(alignment, output, read_name, sequence):
+    """
+    Write an alignment to file output in SAM format.
+    """
     output.write(alignment2sam(alignment, read_name, sequence))
     output.write('\n')
 
@@ -128,6 +139,12 @@ def proba():
     print(list(contig_mappings.items())[0])
 
 def map_contigs(filename):
+    """
+    Map contigs in file filename to globally defined reference.
+    Update contig_mappings dictionary.
+    At contig_name entry add a generator of alignments
+    (result of mappy::map function).
+    """
     for contig in mappy.fastx_read(filename):
         contig_name, contig_seq, contig_quality = contig
         contig_mappings[contig_name] = reference_for_contigs.map(contig_seq)
@@ -136,10 +153,56 @@ def choose_mapping(mappings):
     # TODO: it will be chosen based on FLAGS
     return mappings[0]
 
-def find_contig_mappings(mappings2contigs):
+def get_contig_mappings(mappings2contigs):
+    """
+    mappings2contigs - list of Alignment objects (read2contig)
+    
+    Return a list of generators from global contig_mappings dictionary.
+
+    See map_contigs for more details.
+    """
     return [contig_mappings[mapping.ctg] for mapping in mappings2contigs]
 
-def calculate_offset(cigar, start, stop):
+def calculate_offset(cigar, start, coordinate):
+    """
+    Given a CIGAR describing mapping of seq A to seq B,
+    calculate the offset of coordinates
+    needed to transfer coordinate from A to B,
+    assuming mapping of A starts at start
+    (that is, start-th coordinate of A is the beggining of CIGAR description).
+
+    For example:
+    If there are no indels in CIGAR,
+    offset should be equal zero.
+
+    If there is one deletion, offset will be positive:
+
+    CIGAR: 10M5D20M ([[10, 0], [5, 2], [20, 0]])
+    start: 3
+    coordinate: 30
+
+    Offset: +5
+
+    If there is one insertion, offset will be negative.
+
+
+          3M  3I    9M                 CIGAR
+       ________________x____           seqA
+         |   |  /          |
+         |   | /           |           mapping
+    _____|___|/____________|_______    seqB
+
+    In this case:
+    CIGAR: 3M3I9M
+    start: 2
+    coordinate: 15
+
+    Offset: -3
+
+    It means, if we want to transfer cooridnate 15 to seqB
+    we should get the start coordinate of mapping seqA to seqB,
+    add 15 and decrease by 3.
+    """
     position_on_contig = start
     offset = - start
     for count, operation in cigar:
@@ -150,7 +213,7 @@ def calculate_offset(cigar, start, stop):
             end_of_operation += count
         print("end of operation:")
         print(end_of_operation)
-        if end_of_operation >= stop:
+        if end_of_operation >= coordinate:
             print("koniec")
             break
         if operation in OPERATIONS_REFERENCE_CONSUMING:
@@ -158,30 +221,62 @@ def calculate_offset(cigar, start, stop):
         if operation in OPERATIONS_QUERY_CONSUMING:
             position_on_contig += count
             offset -= count
-    print(position_on_contig, offset, stop)
+    print(position_on_contig, offset, coordinate)
     return offset
  
 def transfer_mapping(read2contig, contig2ref):
+    """
+    read2contig - mappy::Alignment object with mapping read to contig
+    contig2ref - mappy::Alignment object with mapping contig to reference
+
+    Returns:
+    read2ref - mappy:Alignment object with mapping read to reference
+    """
     # TODO:
-    # !reverse mapping
+    # check reverse mapping -> 
+    #  result is slightly different when I transfer through contigs.fa and contigs_rev.fa,
+    #  it probably shouldn't (98, 162 -> 93, 163; 329, 399 -> 331, 399)
     # cigar? Do we keep the original one? Or merge with contig2ref?
-    # Mapping quality - how do we want to calculate it?
     # mlen, blen attributes
+    # Mapping quality - how do we want to calculate it?
+    # primary mappings?
+
     print("Read2contig:")
     print(read2contig)
     print("Contig2ref:")
     print(contig2ref)
-    start_offset = calculate_offset(contig2ref.cigar, contig2ref.q_st, read2contig.r_st)
-    start = read2contig.r_st + contig2ref.r_st + start_offset
-    end_offset = calculate_offset(contig2ref.cigar, contig2ref.q_st, read2contig.r_en)
+
+    if contig2ref.strand == 1:
+        start_offset = calculate_offset(contig2ref.cigar, contig2ref.q_st, read2contig.r_st)
+        end_offset = calculate_offset(contig2ref.cigar, contig2ref.q_st, read2contig.r_en)
+        start = read2contig.r_st + contig2ref.r_st + start_offset
+        end = read2contig.r_en + contig2ref.r_st + end_offset
+    else:
+        contig_length = sum([operation[0] for operation in contig2ref.cigar if operation[1] in OPERATIONS_QUERY_CONSUMING]) # to chyba nie jest poprawne, ale tymczasowo niech bedize
+        cigar = contig2ref.cigar
+        cigar.reverse()
+        start_offset = calculate_offset(cigar,
+                                        contig_length - contig2ref.q_en,
+                                        read2contig.r_st)
+        end_offset = calculate_offset(cigar,
+                                      contig_length - contig2ref.q_en,
+                                      contig_length - read2contig.r_st)
+        start = (contig_length - read2contig.r_en) + \
+                contig2ref.r_st + end_offset
+        end = (contig_length - read2contig.r_st) + \
+              contig2ref.r_st + start_offset
     #end = start + read2contig.r_en - read2contig.r_st
-    end = read2contig.r_en + contig2ref.r_st + end_offset
     # ^ na pewno mozna zrobic lepiej mapowanie koncowego koordynatu
     print("start, end:")
     print(start, end)
+    strand = read2contig.strand + contig2ref.strand
+    if strand == 0:
+        strand = -1
+    else:
+        strand = 1
     read2ref = mappy.Alignment(contig2ref.ctg, contig2ref.ctg_len, # chromosome
                                start, end,                         # start, end on reference
-                               1,                                  # strand - todo
+                               strand,
                                read2contig.q_st, read2contig.q_en, # start, end on query
                                read2contig.mapq,                   # mapping quality - potentially todo
                                read2contig.cigar,
@@ -204,6 +299,15 @@ def get_transferred_mapping(read2contig, contig2ref):
     contig2ref = list(contig2ref[0])[0]
     mapping = transfer_mapping(read2contig, contig2ref)
     return mapping
+
+def transfer_read(mappings2contigs, output, name, seq):
+    mappings = get_contig_mappings(mappings2contigs)
+    mapping = get_transferred_mapping(mappings2contigs, mappings)
+    if mapping is None:
+        # read mapped 2 contig, but contig not mapped to ref
+        return
+    mapping = choose_mapping(mappings2contigs)
+    write_alignment(mapping, output, name, seq)
  
 def main():
     global arguments
@@ -241,9 +345,7 @@ def main():
             else:
                 # read mapped only 2 contigs
                 # we want to transfer mapping
-                mappings = find_contig_mappings(mappings2contigs)
-                mapping = choose_mapping(mappings2contigs)
-                write_alignment(mapping, output. name, seq)
+                transfer_read(mappings2contigs, output, name, seq)
                 continue
         else:
             if mappings2contigs == []:
@@ -254,14 +356,7 @@ def main():
             else:
                 # read mapped 2 reference and 2 contigs
                 # we want to transfer mapping
-                # TODO: it should be in a method
-                mappings = find_contig_mappings(mappings2contigs)
-                mapping = get_transferred_mapping(mappings2contigs, mappings)
-                if mapping is None:
-                    # read mapped 2 contig, but contig not mapped to ref
-                    continue
-                mapping = choose_mapping(mappings2contigs)
-                write_alignment(mapping, output, name, seq)
+                transfer_read(mappings2contigs, output, name, seq)
                 continue
         #write_alignment(read, output)
     output.close()
