@@ -1,11 +1,9 @@
 #!/usr/bin/python
-#import sys
+import sys
 #import os
 import copy
 import argparse
 import collections
-import pysam
-import mappy
 from mapped_segment import MappedSegment
 
 # operations defined in CIGAR strings
@@ -31,13 +29,12 @@ reference_for_reads = None
 reference_for_contigs = None
 contigs_as_reference = None
 all_reads = set()
+header = {'PG':[], 'SQ':[]}
 output = None
-# class mappy::Alignment:
-# self, ctg, cl, cs, ce, strand, qs, qe, mapq, cigar, is_primary, mlen, blen, NM, trans_strand, seg_id, cs_str, MD_str
 
 def parse_arguments():
     parser = argparse.ArgumentParser(description=
-            'You should provide reads and contigs.'
+            'You should always provide reads and contigs.'
             ' If they are already mapped and in sam/bam format,'
             ' you should also provide reads2contigs.'
             ' If they are in fasta/fastq format and you want me to map them,'
@@ -50,7 +47,7 @@ def parse_arguments():
                         help='contigs; either bam/sam file with contigs mapped to reference or fasta/fastq file to be mapped to reference with minimap.')
     parser.add_argument('--reference',
                         action='store', type=str,
-                        help='fasta file with reference. ')
+                        help='fasta file with reference.')
     parser.add_argument('--reads2contigs',
                         action='store', type=str,
                         help='sam/bam file with reads mapped to contigs.')
@@ -63,37 +60,35 @@ def parse_arguments():
     #                    ' By default I won\'t.')
     parser.add_argument('--mapped2ref',
                         action='store', type=str,
-                        default='condition',
+                        default='leave',
                         help='Read is mapped to reference. What should I do with it?'
                              ' 1. leave - leave it alone, don\'t touch it.'
-                             ' 2. transfer - if it can be transferred via contigs, do it.'
-                             ' 3. check - check if it should be tranferred.'
-                             ' If read meets some condition, it will be transferred,'
-                             ' otherwise it will be left alone.'
-                             ' You can specify the condition with "--condition" argument.')
-    parser.add_argument('--condition',
-                        action='store', type=str, nargs='+',
-                        help='So, you specified "check" in "mapped2ref" argument.'
-                             ' What condition should read meet to be transferred?'
-                             ' 1. ambiguous - have more than one mapping.'
-                             ' 2. quality [x] - have mapping quality below x.'
-                             ' 3. cigar? Sth depending on CIGAR string. Obviously not implemented yet.'
-                             '! You can specify more than one option here!')
+                             ' 2. transfer - if it can be transferred via contigs, do it.')
+                             #' 3. check - check if it should be tranferred.'
+                             #' If read meets some condition, it will be transferred,'
+                             #' otherwise it will be left alone.'
+                             #' You can specify the condition with "--condition" argument.')
+    #parser.add_argument('--condition',
+    #                    action='store', type=str, nargs='+',
+    #                    help='So, you specified "check" in "mapped2ref" argument.'
+    #                         ' What condition should read meet to be transferred?'
+    #                         ' 1. ambiguous - have more than one mapping.'
+    #                         ' 2. quality [x] - have mapping quality below x.'
+    #                         ' 3. cigar? Sth depending on CIGAR string. Obviously not implemented yet.'
+    #                         '! You can specify more than one option here!')
     parser.add_argument('-k', '--keep-unmapped-contigs',
                         action='store_true',
                         help='Add unmapped contigs to the references in the output?'
                         ' By default I won\'t.')
-    parser.add_argument('--test',
-                        action='store', type=str)
-    parser.add_argument('-a', '--ambigous-mappings',
-                        action='store', type=str, default='best',
-                        help='What to do with ambigous mappings?\n'
-                        ' - best: keep the best mapping (default).'
-                        '         if there is none, choose randomly.\n\n'
-                        ' - best-rm: keep the best mapping.'
-                        '         if there is none, remove this contig/read.\n'
-                        '- rm: remove the ambigously mapped reads/contigs.\n'
-                        '- keep: keep all the best mappings.\n')
+    #parser.add_argument('-a', '--ambigous-mappings',
+    #                    action='store', type=str, default='best',
+    #                    help='What to do with ambigous mappings?\n'
+    #                    ' - best: keep the best mapping (default).'
+    #                    '         if there is none, choose randomly.\n\n'
+    #                    ' - best-rm: keep the best mapping.'
+    #                    '         if there is none, remove this contig/read.\n'
+    #                    '- rm: remove the ambigously mapped reads/contigs.\n'
+    #                    '- keep: keep all the best mappings.\n')
     arguments = parser.parse_args()
     check_arguments(arguments)
     return arguments
@@ -108,12 +103,12 @@ def proba():
 def guess_fileformat(filename):
     if filename.endswith("bam") or filename.endswith("sam"):
         return "bam"
-    elif filename.endswith("fasta") or filename.endswith("fa"):
+    elif filename.endswith("fasta") or filename.endswith("fa") or filename.endswith("fq") or filename.endswith("fastq"):
         return "fasta"
     else:
         raise ValueError("I can't guess format of %s."
-                " Currently I support sam, bam and fasta files"
-                " and I expect .sam, .bam, .fa or .fasta extension."
+                " Currently I support sam, bam, fastq and fasta files"
+                " and I expect .sam, .bam, .fa, .fq, .fasta or .fastq extension."
                 " I can't guess without the proper name, sorry."
                 % filename)
 
@@ -154,16 +149,22 @@ def map2contigs(fasta):
                          " I can't map to them if they're not read in as reference.")
     return map_with_mappy(fasta, contigs_as_reference)
 
-def read_in_bam(filename):
+def read_in_bam(filename, add_header=False):
+    import pysam
     bam = pysam.AlignmentFile(filename)
     #bam = change_bam2list(bam)
+    if add_header:
+        header['SQ'].extend(bam.header['SQ'])
+        #header['PG'].extend(bam.header['PG'])
     bam = change_bam2dict(bam)
     return bam
 
 def read_in_fasta_as_query(filename):
+    import mappy
     return mappy.fastx_read(filename)
 
 def read_in_fasta_as_reference(filename, preset="sr"):
+    import mappy
     return mappy.Aligner(filename, preset)
 
 def change_bam2list(bam):
@@ -192,14 +193,17 @@ def read_in_reference_for_contigs():
     if reference_for_contigs is None:
         #if hasattr(arguments, 'reference'):
         if not arguments.reference is None:
-            #reference_for_contigs = read_in_fasta_as_reference(arguments.reference, "asm10")
-            reference_for_contigs = read_in_fasta_as_reference(arguments.reference, "sr")
+            reference_for_contigs = read_in_fasta_as_reference(arguments.reference, "asm10")
+            #reference_for_contigs = read_in_fasta_as_reference(arguments.reference, "sr")
 
 def read_in_contigs_as_reference():
     global contigs_as_reference
     contigs_format = guess_fileformat(arguments.contigs)
     if contigs_format == "fasta":
+        import mappy
         contigs_as_reference = mappy.Aligner(arguments.contigs)
+    else:
+        raise ValueError("Contigs are in weird format, I refuse to cooperate.")
 
 #def read_in_file(filename):
 #    fileformat = guess_fileformat(filename)
@@ -211,31 +215,35 @@ def read_in_contigs_as_reference():
 
 def read_in_contigs2reference():
     global contigs2reference
+    print("Reading in contigs2reference...")
     filename = arguments.contigs
     #contigs2reference = read_in_file(filename)
     fileformat = guess_fileformat(filename)
     if fileformat == "bam":
-        contigs2reference = read_in_bam(filename)
+        contigs2reference = read_in_bam(filename, add_header=False)
     elif fileformat == "fasta":
         fasta = read_in_fasta_as_query(filename)
         contigs2reference = map_contigs2reference(fasta)
 
 def read_in_reads2reference():
     global reads2reference
+    print("Reading in reads2reference...")
     filename = arguments.reads
     #reads2reference = read_in_file(filename)
     fileformat = guess_fileformat(filename)
     if fileformat == "bam":
-        reads2reference = read_in_bam(filename)
+        reads2reference = read_in_bam(filename, add_header=True)
     elif fileformat == "fasta":
         fasta = read_in_fasta_as_query(filename)
         reads2reference =  map_reads2reference(fasta)
 
 def read_in_reads2contigs():
     global reads2contigs
+    print("Reading in reads2contigs...")
     #if hasattr(arguments, 'reads2contigs'):
     if not arguments.reads2contigs is None:
-        reads2contigs = read_in_bam(arguments.reads2contigs)
+        add_header = arguments.keep_unmapped_contigs
+        reads2contigs = read_in_bam(arguments.reads2contigs, add_header)
     else:
         reads = read_in_fasta_as_query(arguments.reads)
         read_in_contigs_as_reference()
@@ -243,11 +251,58 @@ def read_in_reads2contigs():
 
 def get_all_reads():
     global all_reads
+    print("getting all reads")
     for read in reads2contigs.keys():
         all_reads.add(read)
     for read in reads2reference.keys():
         all_reads.add(read)
+
+def write_stats():
+    stats = open(arguments.output + "_stats.txt", "w")
+    stats.write("All reads: %d, including:\n" % len(all_reads))
+    stats.write("\tReads mapped to reference: %d, %f \% of all; including:\n" % (0, 0))
+    stats.write("\t\tReads mapped uniquely (only one alignment): %d, %f \% of all, %f \% of mapped\n" % (0, 0, 0))
+    stats.write("\t\tReads mapped uniquely (no secondary alignments), possibly with secondary alignments:"
+                " %d, %f \% of all, %f \% of mapped\n" % (0, 0, 0))
+    stats.write("\t\tReads mapped non-uniquely (at least one secondary alignment): %d, %f \% of all, %f \% of mapped\n" % (0, 0, 0))
+    stats.write("\tReads mapped to contigs: %d, %f % of all; including:\n" % (0, 0))
+    stats.close()
+
+def write_unmapped_read(read_name, output):
+    output.write("\t".join([read_name, '4', '*', '0', '0', '*', '*', '0', '0', '*', '*']))
+    output.write("\n")
         
+def simplify_header():
+    global header
+    sequences = []
+    sequence_names = []
+    for sequence in header['SQ']:
+        name = sequence['SN']
+        if name not in sequence_names:
+            sequences.append(sequence)
+            sequence_names.append(name)
+    header['PG'] = [{'CL': ' '.join(sys.argv),
+                     'ID': 'IMCA',
+                     'VN': '0.0.1-test-beta'}]
+
+def header2str():
+    global header
+    string = ''
+    for seq in header['SQ']:
+        string += "@SQ\t"
+        string += "SN:%s\t" % seq['SN']
+        string += "LN:%d\n" % seq['LN']
+    string += "@PG"
+    for key, value in header['PG'][0].items():
+        string += "\t%s:%s" % (key, value)
+    string += "\n"
+    header = string
+
+def write_header():
+    simplify_header()
+    header2str()
+    output.write(header)
+
 def main():
     global arguments
     global reads2contigs
@@ -256,15 +311,83 @@ def main():
     global output
     arguments = parse_arguments()
     read_in_contigs2reference()
-    print(contigs2reference)
+    #print(contigs2reference)
     read_in_reads2reference()
-    print(reads2reference)
+    #print(reads2reference)
     read_in_reads2contigs()
-    print(reads2contigs)
+    #print(reads2contigs)
     get_all_reads()
+    #print("Header:")
+    #print(header)
     
     #output = pysam.AlignmentFile(arguments.output, "w")
     output = open(arguments.output, "w")
+    write_header()
+    #print(header)
+
+    counter = 0
+    counter_of_mapped_to_ref = 0    
+    counter_of_mapped_to_contigs = 0
+    for read_name in all_reads:
+        counter += 1
+        if counter % 500000 == 0:
+            print("%d reads processed" % counter)
+        #print("Read:")
+        #print(read_name)
+        mapped_to_ref = (read_name in reads2reference and reads2reference[read_name][0].is_mapped)
+        mapped_to_contigs = (read_name in reads2contigs and reads2contigs[read_name][0].is_mapped)
+
+        if mapped_to_ref:
+            counter_of_mapped_to_ref += 1
+        if mapped_to_contigs:
+            counter_of_mapped_to_contigs += 1
+
+        leave = False
+        transfer = False
+
+        # FIRST: decide what to do
+        if arguments.mapped2ref == "leave":
+            if mapped_to_ref:
+                leave = True
+            elif mapped_to_contigs:
+                transfer = True
+        elif arguments.mapped2ref == "transfer":
+            if mapped_to_contigs:
+                transfer = True
+            elif mapped_to_ref:
+                leave = True
+
+        # SECOND: do it
+        if leave:
+            mappings = reads2reference[read_name]
+            for mapping in mappings:
+                mapping.write_alignment(output)
+        elif transfer:
+            mappings = reads2contigs[read_name]
+            for mapping in mappings:
+                try:
+                    contig_mappings = contigs2reference[mapping.reference]
+                except AttributeError:
+                    print(read_name)
+                    print(mappings)
+                    print(mapping,is_mapped)
+                    print(mapping)
+                if len(contig_mappings) == 0 or not contig_mappings[0].is_mapped:
+                    if arguments.keep_unmapped_contigs:
+                        mapping.write_alignment(output)
+                else:
+                    mapping_to_transfer = copy.deepcopy(mapping)
+                    for contig_mapping in contig_mappings:
+                        mapping_to_transfer.transfer_mapping(contig_mapping)
+                        mapping_to_transfer.write_alignment(output)
+                        mapping_to_transfer = copy.deepcopy(mapping)
+        else:
+            write_unmapped_read(read_name, output)
+
+    print("Mapped to reference: %d" % counter_of_mapped_to_ref)
+    print("Mapped to contigs: %d" % counter_of_mapped_to_contigs)
+
+    """
     for read_name, mappings in reads2reference.items():
         if arguments.mapped2ref == "leave":
             for mapping in mappings:
@@ -284,6 +407,8 @@ def main():
                 mapping.write_alignment(output)
         # here we decide what we want to do with these mappings
         # potentially we write one / some / all to output
+    """
+    output.close()
 
 if __name__ == '__main__':
     main()

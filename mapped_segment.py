@@ -34,11 +34,15 @@ class MappedSegment:
     cigar           | cigar_str  |      cigarstring      |  =
     cigar_tuples    |   cigar    |      cigartuples      | reversed
     is_mapped       |     -      |      !is_unmapped     |
-    name
-    sequence
+    name            |     -      |      query_name       |
+    sequence        |     -      |    query_sequence     |
+    transferred     |     -      |          -            |
     ===========================================================================
     ctg_len? uzywam tego w nowej wersji IMCA, ale chyba tylko dlatego ze mappy tego potrzebowal
         wiec jesli nie bede operowac na jego obiektach to chyba spoko
+        chociaz moze sie przydac do konstruowania headera w bamie
+
+    transferred - whether the mapping has been transferred through contigs to reference.
 
     ------
     Attributes of mappy.Alignment:
@@ -136,38 +140,50 @@ class MappedSegment:
         self.cigar_tuples = mappy_alignment.cigar
         self.is_mapped = True
         self.name = "."
+        self.sequence = "."
+        self.transferred = False
 
     def read_from_pysam(self, pysam_aligned_segment):
-        if pysam_aligned_segment.is_reverse== True:
-            self.strand = '-'
-        else:
-            self.strand = '+'
-        self.is_primary = not pysam_aligned_segment.is_secondary
-        self.reference = pysam_aligned_segment.reference_name
-        # coordinates: to check
-        self.start_on_ref = pysam_aligned_segment.query_alignment_start
-        self.end_on_ref = pysam_aligned_segment.query_alignment_end
-        self.start_on_query = pysam_aligned_segment.query_alignment_start
-        self.end_on_query = pysam_aligned_segment.query_alignment_end
-        self.mapping_quality = pysam_aligned_segment.mapping_quality
-        self.cigar = pysam_aligned_segment.cigarstring
-        self.cigar_tuples = [(i[1], i[0]) for i in pysam_aligned_segment.cigartuples]
         self.is_mapped = not pysam_aligned_segment.is_unmapped
+        if self.is_mapped:
+            if pysam_aligned_segment.is_reverse== True:
+                self.strand = '-'
+            else:
+                self.strand = '+'
+            self.is_primary = not pysam_aligned_segment.is_secondary
+            self.reference = pysam_aligned_segment.reference_name
+            # coordinates: to check
+            self.start_on_ref = pysam_aligned_segment.reference_start + 1
+            self.end_on_ref = pysam_aligned_segment.reference_end
+            self.start_on_query = pysam_aligned_segment.query_alignment_start
+            self.end_on_query = pysam_aligned_segment.query_alignment_end
+            self.mapping_quality = pysam_aligned_segment.mapping_quality
+            self.cigar = pysam_aligned_segment.cigarstring
+            self.cigar_tuples = [(i[1], i[0]) for i in pysam_aligned_segment.cigartuples]
         self.name = pysam_aligned_segment.query_name
+        self.sequence = pysam_aligned_segment.query_sequence
+        self.transferred = False
 
-    def create_from_scratch(self, attributes):
-        self.strand = attributes['strand']
-        self.is_primary = attributes['is_primary']
-        self.reference = attributes['reference']
-        self.start_on_query = attributes['start_on_query']
-        self.end_on_query = attributes['end_on_query']
-        self.start_on_ref = attributes['start_on_ref']
-        self.end_on_ref = attributes['end_on_ref']
-        self.mapping_quality = attributes['mapping_quality']
-        self.cigar = attributes['cigar']
-        self.cigar_tuples = attributes['cigar_tuples']
-        self.is_mapped = attributes['is_mapped']
-        self.name = attributes['name']
+    def create_from_scratch(self,
+                            strand=".", is_primary=False, reference="*",
+                            start_on_query=0, end_on_query=0,
+                            start_on_ref=0, end_on_ref=0,
+                            mapping_quality=0, cigar="*", cigur_tuples=[],
+                            is_mapped=False, name=".", sequence="*"):
+        self.strand = strand
+        self.is_primary = is_primary
+        self.reference = reference
+        self.start_on_query = start_on_query
+        self.end_on_query = end_on_query
+        self.start_on_ref = start_on_ref
+        self.end_on_ref = end_on_ref
+        self.mapping_quality = mapping_quality
+        self.cigar = cigar
+        self.cigar_tuples = cigar_tuples
+        self.is_mapped = is_mapped
+        self.name = name
+        self.sequence = sequence
+        self.transferred = False
 
     def calculate_flag(self):
         """
@@ -205,16 +221,10 @@ class MappedSegment:
         version from 20.06.2019:
         =================================================================================
         1  QNAME String [!-?A-~]{1,254}             Query template NAME
-        2  FLAG  Int 
-        [0, 2^16-1] 
-        bitwise
-        FLAG
+        2  FLAG  Int    [0, 2^16-1]                 bitwise FLAG
         3  RNAME String \*|[:rname:^*=][:rname:]*   Reference sequence NAME
         4  POS   Int    [0/2^31-1]                  1-based leftmost mapping POSition
-        5  MAPQ  Int   
-        [0,2^8-1]       
-        MAPping
-        Quality
+        5  MAPQ  Int    [0,2^8-1]                   MAPping Quality
         6  CIGAR String \*|([0-9]+[MIDNSHPX=])+     CIGAR string
         7  RNEXT String \*|=|[:rname:^*=][:rname:]* Reference name of the mate/next read
         8  PNEXT Int    [0,2^31-1]                  Position of the mate/next read
@@ -325,7 +335,8 @@ class MappedSegment:
         #print("Contig2ref:")
         #print(contig2ref)
 
-        if contig2ref.strand == '+':
+        #if contig2ref.strand == '+':
+        if True:
             start_offset = contig2ref.calculate_offset(self.start_on_ref)
             end_offset = contig2ref.calculate_offset(self.end_on_ref)
             start = self.start_on_ref + contig2ref.start_on_ref + start_offset
@@ -334,6 +345,7 @@ class MappedSegment:
             contig_length = sum([operation[0] for operation in contig2ref.cigar_tuples if operation[1] in OPERATIONS_QUERY_CONSUMING]) # to chyba nie jest poprawne, ale tymczasowo niech bedzie
             # TODO dokonczyc poprawianie tego else'a, teraz nie zadziala
             # nie wiem czy nie musze zsecodowac sprawdzania nici na calculate_offset
+            # chociaz moze po prostu odwroce cigar, wylicze offset i odwroce z powrotem?..
             cigar = contig2ref.cigar_tuples
             cigar.reverse()
             start_offset = calculate_offset(cigar,
@@ -350,13 +362,18 @@ class MappedSegment:
         # ^ na pewno mozna zrobic lepiej mapowanie koncowego koordynatu
         # tylko ze ja chyba juz nie potrzebuje atrybutu end
         #  byl mi potrzebny jak operowalam na mappy.Alignment
-        print("start, end:")
-        print(start, end)
+        #print("start, end:")
+        #print(start, end)
         if self.strand == contig2ref.strand:
             self.strand = '+'
         else:
             self.strand = '-'
         self.reference = contig2ref.reference
-        self.start_on_ref = start
+        #self.start_on_ref = start
+        # sometimes I get non positive int as start, and I don't think it should be happening,
+        # but until I fix this here's a quick patch.
+        # Samtools don't like when mapped read have 0 or negative coordinate, so I replace it with 1.
+        self.start_on_ref = max(1, start)
+        # ...actually sometimes I still get zero. Weird. # BUG
         self.end_on_ref = end
-        print(self)
+        #print(self)
