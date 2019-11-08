@@ -24,6 +24,17 @@ If you encounter any problems running IMCA
  or have any comments or suggestions,
  please let me know at a dot macioszek at mimuw.edu.pl.
 
+### Difference from IMCA v1
+
+- You can provide fasta files instead of sams / bams and IMCA can map them for you,
+ but I don't recommend it. Just ignore this feature for now.
+
+- No `transfer_mapping.py` script, `IMCA.py` instead.
+
+- Slightly different argument names. Please read parameters section.
+
+- No ambiguous mappings resolving. I just leave everything.
+
 ### Instalation and requirements
 
 No installation needed.
@@ -41,9 +52,9 @@ the mappings should be in .bam / .sam format
 (preferalby with CIGAR strings assigned to every mapping),
 and contigs in fasta format.
 
-If you provide your files in bam/sam format, pysam package is needed.
+If you provide your files in bam/sam format, [pysam](https://pypi.org/project/pysam/) package is needed.
  If you provide them in fasta/fastq format and you want IMCA to map them,
- mappy package is needed.
+ [mappy](https://pypi.org/project/mappy/) package is needed.
 
 ### Workflow
 
@@ -318,7 +329,7 @@ Depending on what you provided as reads and contigs,
 
 ### Example datasets
 
-To add.
+contigs.fa, reads.fa and ref.fa are simple fasta files for testing purposes.
 
 ### References
 
