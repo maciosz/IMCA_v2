@@ -34,11 +34,11 @@ output = None
 
 def parse_arguments():
     parser = argparse.ArgumentParser(description=
-            'You should always provide reads and contigs.'
-            ' If they are already mapped and in sam/bam format,'
-            ' you should also provide reads2contigs.'
-            ' If they are in fasta/fastq format and you want me to map them,'
-            ' you should also provide reference.')
+                                                 'You should always provide reads and contigs.'
+                                                 ' If they are already mapped and in sam/bam format,'
+                                                 ' you should also provide reads2contigs.'
+                                                 ' If they are in fasta/fastq format and you want me to map them,'
+                                                 ' you should also provide reference.')
     parser.add_argument('-r', '--reads',
                         action='store', type=str,
                         help='reads; either bam/sam file with reads mapped to reference or fasta/fastq file to be mapped to reference with minimap.')
@@ -94,23 +94,29 @@ def parse_arguments():
     return arguments
 
 def check_arguments(args):
+    """
+    Check if the arguments are in correct format and so on.
+    """
     # TODO
     pass
 
-def proba():
-    print(list(contig_mappings.items())[0])
-
 def guess_fileformat(filename):
+    """
+    Guess format of file filename.
+    Currently basing only on the suffix:
+    supported format is fasta (fasta / fa suffix),
+    fastq (fastq / fq), bam and sam.
+    """
     if filename.endswith("bam") or filename.endswith("sam"):
         return "bam"
     elif filename.endswith("fasta") or filename.endswith("fa") or filename.endswith("fq") or filename.endswith("fastq"):
         return "fasta"
     else:
         raise ValueError("I can't guess format of %s."
-                " Currently I support sam, bam, fastq and fasta files"
-                " and I expect .sam, .bam, .fa, .fq, .fasta or .fastq extension."
-                " I can't guess without the proper name, sorry."
-                % filename)
+                         " Currently I support sam, bam, fastq and fasta files"
+                         " and I expect .sam, .bam, .fa, .fq, .fasta or .fastq extension."
+                         " I can't guess without the proper name, sorry."
+                         % filename)
 
 def map_with_mappy(query, subject):
     """
@@ -260,12 +266,12 @@ def get_all_reads():
 def write_stats():
     stats = open(arguments.output + "_stats.txt", "w")
     stats.write("All reads: %d, including:\n" % len(all_reads))
-    stats.write("\tReads mapped to reference: %d, %f \% of all; including:\n" % (0, 0))
-    stats.write("\t\tReads mapped uniquely (only one alignment): %d, %f \% of all, %f \% of mapped\n" % (0, 0, 0))
+    stats.write("\tReads mapped to reference: %d, %f %% of all; including:\n" % (0, 0))
+    stats.write("\t\tReads mapped uniquely (only one alignment): %d, %f %% of all, %f %% of mapped\n" % (0, 0, 0))
     stats.write("\t\tReads mapped uniquely (no secondary alignments), possibly with secondary alignments:"
-                " %d, %f \% of all, %f \% of mapped\n" % (0, 0, 0))
-    stats.write("\t\tReads mapped non-uniquely (at least one secondary alignment): %d, %f \% of all, %f \% of mapped\n" % (0, 0, 0))
-    stats.write("\tReads mapped to contigs: %d, %f % of all; including:\n" % (0, 0))
+                " %d, %f %% of all, %f %% of mapped\n" % (0, 0, 0))
+    stats.write("\t\tReads mapped non-uniquely (at least one secondary alignment): %d, %f %% of all, %f %% of mapped\n" % (0, 0, 0))
+    stats.write("\tReads mapped to contigs: %d, %f %% of all; including:\n" % (0, 0))
     stats.close()
 
 def write_unmapped_read(read_name, output):

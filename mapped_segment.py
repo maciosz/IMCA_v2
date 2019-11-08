@@ -96,7 +96,7 @@ class MappedSegment:
     query_length: the length of the query/read. This value corresponds to the length of the sequence supplied in the BAM/SAM file. The length of a query is 0 if there is no sequence in the BAM/SAM file. In those cases, the read length can be inferred from the CIGAR alignment, see pysam.AlignedSegment.infer_query_length(). The length includes soft-clipped bases and is equal to len(query_sequence). This property is read-only but can be set by providing a sequence. Returns 0 if not available.
     query_name: the query template name (None if not present)
     query_qualities: read sequence base qualities, including soft clipped bases (None if not present). Quality scores are returned as a python array of unsigned chars.
-    Note that this is not the ASCII-encoded value typically seen in FASTQ or SAM formatted files. Thus, no offset of 33 needs to be subtracted. Note that to set quality scores 
+    Note that this is not the ASCII-encoded value typically seen in FASTQ or SAM formatted files. Thus, no offset of 33 needs to be subtracted. Note that to set quality scores
     the sequence has to be set beforehand as this will determine the expected length of the quality score array. This method raises a ValueError if the length of the quality scores
     and the sequence are not the same.
     query_sequence: read sequence bases, including soft clipped bases (None if not present). The sequence is returned as it is stored in the BAM file. Some mappers might have stored a reverse complement of the original read sequence.
@@ -146,7 +146,7 @@ class MappedSegment:
     def read_from_pysam(self, pysam_aligned_segment):
         self.is_mapped = not pysam_aligned_segment.is_unmapped
         if self.is_mapped:
-            if pysam_aligned_segment.is_reverse== True:
+            if pysam_aligned_segment.is_reverse:
                 self.strand = '-'
             else:
                 self.strand = '+'
@@ -168,7 +168,7 @@ class MappedSegment:
                             strand=".", is_primary=False, reference="*",
                             start_on_query=0, end_on_query=0,
                             start_on_ref=0, end_on_ref=0,
-                            mapping_quality=0, cigar="*", cigur_tuples=[],
+                            mapping_quality=0, cigar="*", cigar_tuples=None,
                             is_mapped=False, name=".", sequence="*"):
         self.strand = strand
         self.is_primary = is_primary
@@ -314,7 +314,7 @@ class MappedSegment:
                 offset -= count
         #print(position_on_contig, offset, coordinate)
         return offset
- 
+
     def transfer_mapping(self, contig2ref):
         """
         contig2ref - MappedSegment with contig mapped to reference
@@ -322,7 +322,7 @@ class MappedSegment:
         Transfers mapping in place.
         """
         # TODO:
-        # check reverse mapping -> 
+        # check reverse mapping ->
         #  result is slightly different when I transfer through contigs.fa and contigs_rev.fa,
         #  it probably shouldn't (98, 162 -> 93, 163; 329, 399 -> 331, 399)
         # cigar? Do we keep the original one? Or merge with contig2ref?
@@ -346,18 +346,18 @@ class MappedSegment:
             # TODO dokonczyc poprawianie tego else'a, teraz nie zadziala
             # nie wiem czy nie musze zsecodowac sprawdzania nici na calculate_offset
             # chociaz moze po prostu odwroce cigar, wylicze offset i odwroce z powrotem?..
-            cigar = contig2ref.cigar_tuples
-            cigar.reverse()
-            start_offset = calculate_offset(cigar,
-                                            contig_length - contig2ref.q_en,
-                                            read2contig.r_st)
-            end_offset = calculate_offset(cigar,
-                                          contig_length - contig2ref.q_en,
-                                          contig_length - read2contig.r_st)
-            start = (contig_length - read2contig.r_en) + \
-                    contig2ref.r_st + end_offset
-            end = (contig_length - read2contig.r_st) + \
-                  contig2ref.r_st + start_offset
+            #cigar = contig2ref.cigar_tuples
+            #cigar.reverse()
+            #start_offset = calculate_offset(cigar,
+            #                                contig_length - contig2ref.q_en,
+            #                                read2contig.r_st)
+            #end_offset = calculate_offset(cigar,
+            #                              contig_length - contig2ref.q_en,
+            #                              contig_length - read2contig.r_st)
+            #start = (contig_length - read2contig.r_en) + \
+            #        contig2ref.r_st + end_offset
+            #end = (contig_length - read2contig.r_st) + \
+            #      contig2ref.r_st + start_offset
         #end = start + read2contig.r_en - read2contig.r_st
         # ^ na pewno mozna zrobic lepiej mapowanie koncowego koordynatu
         # tylko ze ja chyba juz nie potrzebuje atrybutu end
