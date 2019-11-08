@@ -1,6 +1,6 @@
-# IMCA
+# IMCA - Improving Mapping with Contigs Assembly
 
-## Improving Mapping with Contigs Assembly
+### Introduction
 
 When mapping reads from any NGS experiment
  (like ChIP-seq, DNase-seq etc.)
@@ -24,14 +24,14 @@ If you encounter any problems running IMCA
  or have any comments or suggestions,
  please let me know at a dot macioszek at mimuw.edu.pl.
 
-### Difference from IMCA v1
+### Differences from IMCA v1
 
 - You can provide fasta files instead of sams / bams and IMCA can map them for you,
  but I don't recommend it. Just ignore this feature for now.
 
 - No `transfer_mapping.py` script, `IMCA.py` instead.
 
-- Slightly different argument names. Please read parameters section.
+- Slightly different argument names. Please read [parameters](https://github.com/maciosz/IMCA_v2#parameters) section.
 
 - No ambiguous mappings resolving. I just leave everything.
 
