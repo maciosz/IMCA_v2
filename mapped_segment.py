@@ -213,7 +213,7 @@ class MappedSegment:
         return str(flag)
 
     def alignment2sam(self):
-        """
+        r"""
         Return a line from SAM file.
 
         From SAM Format Specification
@@ -257,10 +257,8 @@ class MappedSegment:
     def calculate_offset(self, coordinate):
         """
         Given a CIGAR describing mapping of seq A to seq B,
-        calculate the offset of coordinates
-        needed to transfer coordinate from A to B,
-        assuming mapping of A starts at start
-        (that is, start-th coordinate of A is the beggining of CIGAR description).
+        calculate the offset
+        needed to transfer coordinate from A to B.
 
         For example:
         If there are no indels in CIGAR,
@@ -269,23 +267,29 @@ class MappedSegment:
         If there is one deletion, offset will be positive:
 
         CIGAR: 10M5D20M ([[10, 0], [5, 2], [20, 0]])
-        start: 3
         coordinate: 30
 
         Offset: +5
 
         If there is one insertion, offset will be negative.
 
+        Clipping at the beginning acts as deletion.
 
-              3M  3I    9M                 CIGAR
+        If there are more deleted bases than inserted,
+        offset is positive; and vice versa.
+
+        Example:
+
+
+           2S 3M  3I    9M                 CIGAR
            ________________x____           seqA
              |   |  /          /
              |   | /          /            mapping
         _____|___|/__________/_________    seqB
 
         In this case:
-        CIGAR: 3M3I9M
-        start: 2
+        CIGAR: 2S3M3I9M
+        mapping start: 2
         coordinate: 15
 
         Offset: -3
@@ -294,9 +298,16 @@ class MappedSegment:
         we should get the start coordinate of mapping seqA to seqB,
         add 15 and decrease by 3.
         """
-        position_on_contig = self.start_on_query
-        offset = - self.start_on_query
-        for count, operation in self.cigar_tuples:
+        cigar = self.cigar_tuples
+        if self.strand == "+":
+            start = self.start_on_query
+        elif self.strand == "-":
+            length = sum([operation[0] for operation in cigar if operation[1] in OPERATIONS_QUERY_CONSUMING])
+            start = length - self.end_on_query
+            cigar.reverse()
+        position_on_contig = start
+        offset = - start
+        for count, operation in cigar:
             #print("Count, operation:")
             #print(count, operation)
             end_of_operation = position_on_contig
@@ -335,29 +346,17 @@ class MappedSegment:
         #print("Contig2ref:")
         #print(contig2ref)
 
-        #if contig2ref.strand == '+':
-        if True:
-            start_offset = contig2ref.calculate_offset(self.start_on_ref)
-            end_offset = contig2ref.calculate_offset(self.end_on_ref)
+        start_offset = contig2ref.calculate_offset(self.start_on_ref)
+        end_offset = contig2ref.calculate_offset(self.end_on_ref)
+        if contig2ref.strand == '+':
             start = self.start_on_ref + contig2ref.start_on_ref + start_offset
             end = self.end_on_ref + contig2ref.start_on_ref + end_offset
         else:
-            contig_length = sum([operation[0] for operation in contig2ref.cigar_tuples if operation[1] in OPERATIONS_QUERY_CONSUMING]) # to chyba nie jest poprawne, ale tymczasowo niech bedzie
-            # TODO dokonczyc poprawianie tego else'a, teraz nie zadziala
-            # nie wiem czy nie musze zsecodowac sprawdzania nici na calculate_offset
-            # chociaz moze po prostu odwroce cigar, wylicze offset i odwroce z powrotem?..
-            #cigar = contig2ref.cigar_tuples
-            #cigar.reverse()
-            #start_offset = calculate_offset(cigar,
-            #                                contig_length - contig2ref.q_en,
-            #                                read2contig.r_st)
-            #end_offset = calculate_offset(cigar,
-            #                              contig_length - contig2ref.q_en,
-            #                              contig_length - read2contig.r_st)
-            #start = (contig_length - read2contig.r_en) + \
-            #        contig2ref.r_st + end_offset
-            #end = (contig_length - read2contig.r_st) + \
-            #      contig2ref.r_st + start_offset
+            contig_length = sum([operation[0] for operation in contig2ref.cigar_tuples if operation[1] in OPERATIONS_QUERY_CONSUMING])
+            start = (contig_length - self.end_on_ref) + \
+                    contig2ref.start_on_ref+ end_offset
+            end = (contig_length - self.start_on_ref) + \
+                  contig2ref.start_on_ref+ start_offset
         #end = start + read2contig.r_en - read2contig.r_st
         # ^ na pewno mozna zrobic lepiej mapowanie koncowego koordynatu
         # tylko ze ja chyba juz nie potrzebuje atrybutu end
